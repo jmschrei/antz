@@ -42,7 +42,7 @@ def isProtein( seq ):
 def rc( seq, compliment=None ):
 	if not compliment:
 		compliment = seqType(seq).compliment
-	return map( lambda x: _rc[x], seq.upper() )
+	return ''.join( map( lambda x: compliment[x], seq.upper() ) )[::-1]
 
 def composition( sequence, alphabet=None, window=None ):
 	n = len( sequence )
@@ -91,7 +91,6 @@ class Sequence( object ):
 		self.comments = comments
 		self.n = len( self.sequence )
 		for key, value in kwargs.iteritems():
-			print key, value
 			if not hasattr( self, key ):
 				setattr( self, key, value )
 
@@ -211,7 +210,7 @@ class DNA( Sequence ):
 			return reduce( add, self.sequence, 0. ) / self.n
 		return [ reduce( add, self.sequence[i:i+window], 0. )/window for i in xrange(m) ]
 
-	def rc( self, sequence=None ):
+	def rc( self ):
 		return rc( self.sequence, compliment=self.__class__.compliment )
 
 	def transcribe( self ):
@@ -225,15 +224,15 @@ class DNA( Sequence ):
 			if DNA.codons[ self.sequence[ i:i+3 ] ] == '*':
 				for j in xrange( 3, i, 3 ):
 					if self.sequence[ i-j:i-j+3 ] == 'ATG':
-						seq = self.sequence[ i-j+3:i+3 ]
-						yield DNA( seq, start=i-j+3, end=i+3, length=j, frame=i%3 )
+						seq = self.sequence[ i-j:i+3 ]
+						yield DNA( seq, start=i-j, end=i+3, length=j, frame=i%3 )
 						break
 
-			if DNA.codons[ DNA.rc( self.sequence[ i:i+3 ] ) ] == '*':
-				for j in xrange( 3, i, 3 ):
-					if DNA.rc( self.sequence[ i+j:i+j+3 ] ) == 'ATG':
-						seq = self.sequence[ i:i+j+3 ]
-						yield DNA( seq, start=self.n-i-j-3, end=self.n-i, length=j+3, frame=-(self.n-i)%3)
+			if DNA.codons[ rc( self.sequence[ i:i+3 ] ) ] == '*':
+				for j in xrange( 3, self.n-i, 3 ):
+					if rc( self.sequence[ i+j:i+j+3 ] ) == 'ATG':
+						seq = rc( self.sequence[ i:i+j+3 ] )
+						yield DNA( seq, start=self.n-i-j-3, end=self.n-i, length=j+3, frame=-((self.n-i)%3))
 						break
 
 class RNA( Sequence ):
