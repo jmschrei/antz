@@ -1,18 +1,29 @@
-from antz.io import *
+# seq.py
+# Contact: Jacob Schreiber
+#          jmschr@cs.washington.edu
+
+'''
+Provides the core sequence data types for the other libraries. Handles
+sequences of DNA, RNA, and protein, and common computational things you may
+want to do with them. These data types will form the core of other modules
+such as the alignment module or the io module.
+'''
+
 import numpy as np
 import matplotlib.pyplot as plt
 import itertools as it
 
+def seqType( sequence ):
+	'''
+	Determine the most likely sequence type for this sequence. It does this by
+	going through the sequence and looking for a character which does not belong
+	in each sequence type until only one sequence type is left. If there are
+	several choices left (for example, 'ACTACAACTACTACATCAC'), then assume that
+	it is DNA, then RNA if DNA is not a choice.
+	'''
 
-def isSeq( seq, alphabet ):
-	for char in seq.upper():
-		if char not in alphabet and char is not 'N':
-			return False
-	return True 
-
-def seqType( seq ):
 	seqs = { 'D':1, 'R':1, 'P':1 }
-	for char in seq.upper():
+	for char in sequence:
 		if seqs['D'] and char not in DNA.alphabet:
 			seqs['D'] = 0
 		elif seqs['R'] and char not in RNA.alphabet:
@@ -30,81 +41,164 @@ def seqType( seq ):
 	if seqs['P']:
 		return Protein
 
-def isRNA( seq ):
-	return isSeq( seq, alpabet=RNA.alphabet )
+def isSeq( seq, alphabet ):
+	'''
+	Returns whether or not the sequence qualifies under the alphabet given.
+	'''
 
-def isDNA( seq ):
-	return isSeq( seq, alphabet=DNA.alphabet )
+	for char in seq.upper():
+		if char not in alphabet and char is not 'N':
+			return False
+	return True 
 
-def isProtein( seq ):
-	return isSeq( seq, alphabet=Protein.alphabet )
+def isRNA( sequence ):
+	'''
+	Return whether or not this sequence qualifies as RNA.
+	'''
+
+	return isSeq( sequence, alpabet=RNA.alphabet )
+
+def isDNA( sequence ):
+	'''
+	Return whether or not this sequence qualifies as DNA.
+	'''
+
+	return isSeq( sequence, alphabet=DNA.alphabet )
+
+def isProtein( sequence ):
+	'''
+	Return whether or not this sequence qualifies as protein.
+	'''
+
+	return isSeq( sequence, alphabet=Protein.alphabet )
 
 def rc( seq, compliment=None ):
+	'''
+	Return the reverse compliment of the strand. Either define a compliment
+	mapping using a dictionary, or it will try to find the best given the
+	composition of the sequence given.
+	'''
+
 	if not compliment:
 		compliment = seqType(seq).compliment
 	return ''.join( map( lambda x: compliment[x], seq.upper() ) )[::-1]
 
 def composition( sequence, alphabet=None, window=None ):
+	'''
+	Return the composition of the sequence. This can be done over the entire
+	file, or as a sliding window over the sequence. If it is over the entire
+	sequence, a dictionary of keys-percentages is returned, otherwise a
+	dictionary of key-lists is provided, where the lists are of percentages
+	using the sliding window
+	'''
+
 	n = len( sequence )
 	if not window:
 		window = n 
 	if not alphabet:
 		alphabet = seqType( seq ).alphabet
 
-	for i in xrange( n-window+1 ):
-		# If first window, must run through sequence
-		# If a window, you want a list, otherwise just an integer
-		if i == 0: 
-			composition = { i:0 for i in alphabet }
-			for char in sequence[ :window ]:
-				composition[char] += 1.
-			for char in alphabet:
-				composition[char] /= window
-			if window != n:
-				for char in alphabet:
-					composition[char] = [ composition[char] ]
+	# If no window, just return the composition across the entire sequence
+	if not window:
+		composition = { i : 0. for i in alphabet }
 
-		# If not first window, the percentages for only at most two nucleotides
-		# change, since you're sliding by one. You can just change those and
-		# go through very quickly that way. 	
-		else:
+		# Go through each character and add a count
+		for char in sequence:
+			composition[ char ] += 1
+
+		# Now normalize to get percentages
+		for char in alphabet:
+			composition[ char ] /= window 
+
+	# If a sliding window, returning composition using this sliding window 
+	else:
+		composition = { i : [0.] for i in alphabet }
+		
+		# Get starting probabilities for the first window
+		for char in sequence[:window]:
+			composition[char] += 1. / window
+		
+		# Go through the remainder of the sequence
+		for i in xrange( n-window+1 ):
 			last_out = sequence[i-1]
-			next_in = sequence[i+window-1]
+			next_in  = sequence[i+window-1]
+
 			for letter in alphabet:
-				freq = composition[letter][-1]
+				# Get the last probability from the window
+				prob = composition[letter][-1]
 				if letter == last_out:
-					freq -= 1./window
+					prob -= 1./window
 				if letter == next_in:
-					freq += 1./window
-				composition[letter].append( freq )
+					prob += 1./window
+				composition[letter].append( prob )
 
 	return composition 
 
-def clean( self, alphabet=None, replacement='N' ):
+def clean( sequence, alphabet=None, replacement='N' ):
+	'''
+	Clean a sequence by turning all characters not belonging in the alphabet
+	into Ns. If no alphabet is provided, then attempt to determine if the type
+	is DNA, RNA, or Protein automatically based on the composition of
+	characters. 
+	'''
+
 	if not alphabet:
-		alphabet = seqType( seq ).alphabet
+		alphabet = seqType( sequence ).alphabet
 	return map( lambda x: x if x in alphabet else 'N', seq.upper() )
 
 class Sequence( object ):
-	def __init__( self, sequence, comments=None, **kwargs ):
+	'''
+	A generic sequence object. This stores the sequence information and whatever
+	other metadata is needed on the object. 
+	'''
+
+	def __init__( self, sequence, **kwargs ):
+		'''
+		Take in the sequence and any other data, and save it.
+		'''
+
 		self.sequence = sequence
-		self.comments = comments
-		self.n = len( self.sequence )
+		self.attributes = kwargs.keys()
 		for key, value in kwargs.iteritems():
 			if not hasattr( self, key ):
 				setattr( self, key, value )
 
+	def __str__( self ):
+		'''
+		A string representation of the sequence is just a string representation
+		of the underlying sequence.
+		'''
+
+		return self.to_fasta( self.attributes )
+
+	@property
+	def n( self ):
+		return len( self.sequence )
+
 	def clean( self, alphabet=None, replacement='N' ):
+		'''
+		Clean the sequence by replacing all characters not in the alphabet with
+		'N's.
+		'''
+
 		return clean( self.sequence, alphabet, replacement )
 	
-	def to_fasta( self, filename, comments=None ):
-		FastA(sequence=self.sequence, comments=comments or self.comments or '').to_file(filename)
-
 	def composition( self, alphabet=None, window=None ):
+		'''
+		Return the composition of this sequence, either as a full sequence or
+		along a sliding window.
+		'''
+
 		alphabet = alphabet or self.__class__.alphabet
 		return composition( self.sequence, alphabet=alphabet, window=window )
 
-	def plot( self, x, window=None, title=None, c='c', alpha=0.8, linewidth=1.5, **kwargs ):
+	def plot( self, x, window=None, title=None, c='c', alpha=0.8, linewidth=1.5, 
+		**kwargs ):
+		'''
+		Plot one of many characteristics of this sequence. x should be a string
+		of the function name you want to plot. 
+		'''
+
 		x, xlabel = getattr( self, x )( window=window ), x
 
 		if type(x) == dict:
@@ -139,12 +233,20 @@ class Sequence( object ):
 		plt.show()
 
 	def mW( self, window=None ):
+		'''
+		Return the molecular weight of the sequence.
+		'''
+
 		add = lambda x, y: x + self.__class__._mW[y]
 		if not window:
 			return reduce( add, self.sequence, 0 )
 		return [ reduce( add, self.sequence[i:i+window], 0 ) for i in xrange(self.n-window+1) ]
 
 	def reverse( self ):
+		'''
+		Return the reverse of the sequence.
+		'''
+
 		return self.__class__( self.sequence[::-1] )
 
 	def shuffle( self ):
@@ -153,9 +255,9 @@ class Sequence( object ):
 		self.sequence = ''.join( seq ) 
 
 	def kmers( self, k ):
-		if type(k) == tuple:
-			m, k = k
-			mult=True
+		'''
+		Return all kmers of length k. 
+		'''
 
 		alpha = self.__class__.alphabet
 		kmers = { ''.join(kmer):0 for kmer in it.product( alpha, repeat=k )} 
@@ -163,31 +265,38 @@ class Sequence( object ):
 			kmer = self.sequence[ i:i+k ]
 			kmers[ kmer ] += 1
 
-		if mult:
-			for i in np.arange( k-1, m-1, -1 ):
-				print i
-				imers = it.product( alpha, repeat=i )
-				for imer in imers:
-					imer = ''.join(imer)
-					kmers[ imer ] = np.sum([ kmers[ imer+char ] for char in alpha ])
-
-		for key, val in kmers.items():
-			print key, val
 		return kmers
+
+	def to_fasta( self, attrs=[] ):
+		'''
+		Return a FastA entry for this sequence. Give a sequence of attributes
+		to be returned in the comment line of the FastA file, or else nothing
+		will be.
+		'''
+
+		return '>' + ' '.join( getattr( self, attr ) for attr in attrs ) + \
+			'\n' + self.sequence  + '\n'
 
 	@classmethod
 	def random( cls, n, alphabet=None ):
+		'''
+		Return a random sequence from an alphabet assuming uniform probabilities
+		on each of the characters
+		'''
+
 		if not alphabet:
 			alphabet = cls.alphabet
-		alpha = list( cls.alphabet )
-		return cls( ''.join([ alpha[i] for i in np.random.randint( len(cls.alphabet), size=n) ]) )
-
-	@classmethod
-	def from_fasta( cls, filename ):
-		return ( cls( seq ) for _, seq in FastA(seq) )
+		return cls( ''.join([ alphabet[i] for i in np.random.randint( 
+			len(cls.alphabet), size=n) ]) )
 
 
 class DNA( Sequence ):
+	'''
+	This is specifically a DNA sequence, which means that its alphabet is
+	clamped to the four canonical nucleotides, their molecular weights
+	and compliments are set, and a list of codons is provided.
+	'''
+
 	alphabet = set('ACGT')
 	_mW = { 'A': 331.2, 'C': 307.2, 'G': 347.2, 'T': 322.2 }
 	compliment = { 'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G' }
@@ -202,8 +311,12 @@ class DNA( Sequence ):
 				'GTT':'V', 'GCT':'A', 'GAC':'D', 'CGT':'R', 'GAA':'E', 'TCA':'S', 'ATG':'M', 
 				'CGC':'R' }
 
-
 	def GC( self, window=None ):
+		'''
+		Return GC content. This can be either a single number representing the
+		GC content across the entire sequence, or as a sliding window.
+		'''
+
 		add = lambda x, y: x + ( y in 'GC' )
 		m = self.n-window+1
 		if not window:
@@ -211,15 +324,34 @@ class DNA( Sequence ):
 		return [ reduce( add, self.sequence[i:i+window], 0. )/window for i in xrange(m) ]
 
 	def rc( self ):
+		'''
+		Return the reverse compliment of this sequence.
+		'''
+
 		return rc( self.sequence, compliment=self.__class__.compliment )
 
 	def transcribe( self ):
+		'''
+		Return the RNA object which would have been produced if this were transcribed.
+		'''
+
 		return RNA( map( lambda x: x if x is not 'T' else 'U', self.sequence ) )
 
 	def translate( self ):
+		'''
+		Go all the way to protein and convert the sequence to protein using the
+		codon table.
+		'''
+
 		return Protein( map( lambda x: DNA.codons[x], self.sequence ) )
 
 	def ORFs( self ):
+		'''
+		Do a simple ORF finding algorithm, yielding ORFs one at a time. Start
+		ORF finding at the start codon, and end when it reaches an end codon.
+		Then go across the reverse compliment and look for ORFs on that as well.
+		'''
+
 		for i in xrange( self.n-2 ):
 			if DNA.codons[ self.sequence[ i:i+3 ] ] == '*':
 				for j in xrange( 3, i, 3 ):
@@ -236,6 +368,12 @@ class DNA( Sequence ):
 						break
 
 class RNA( Sequence ):
+	'''
+	This is specifically an RNA sequence, which means that its alphabet is
+	clamped to the four canonical nucleotides, their molecular weights
+	and compliments are set, and a list of codons is provided.
+	'''
+
 	alphabet = set('ACGU')
 	_mW = { 'A': 347.2, 'C': 323.2, 'G': 363.2, 'U': 324.2 }
 	compliment = { 'A': 'U', 'U': 'A', 'G': 'C', 'C': 'G' }
@@ -251,12 +389,26 @@ class RNA( Sequence ):
 			   'UUC':'F' }
 
 	def translate( self ):
+		'''
+		Translate this strand directly into protein, using the RNA codon table.
+		'''
+
 		return Protein( map( lambda x: RNA.codons[x], self.sequence ) )
 
 	def rc( self ):
+		'''
+		Return the reverse compliment of this strand. 
+		'''
+
 		return RNA( rc( self.sequence, compliment=self.__class__.compliment ) )
 
 class Protein( Sequence ):
+	'''
+	This is specifically a protein sequence, which means that its alphabet is
+	clamped to the twenty canonical amino acids, their molecular weights, pkas,
+	and hydropathys are set.
+	'''
+
 	alphabet = set('ACDEFGHIKLMNPQRSTVWY')
 
 	_mW = {'A': 89.1, 'C': 121.2, 'D': 133.1, 'E': 147.1, 'F': 165.2, 'G': 75.1,
@@ -284,6 +436,10 @@ class Protein( Sequence ):
 					'D': -3.5, 'N': -3.5, 'K': -3.9, 'R': -4.5 }
 
 	def hydropathy( self, window=None ):
+		'''
+		Return the hydropathy of either the entire protein, or a set window.
+		'''
+
 		add = lambda x, y: x + self.__class__._hydropathy[y]
 		if not window:
 			window = self.n
